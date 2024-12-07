@@ -1,0 +1,12 @@
+protoc --proto_path=. \
+       --go_out=. \
+       --go-grpc_out=. \
+       --go_opt=paths=source_relative \
+       proto/greeter.proto
+
+protoc --proto_path=. \
+       --go_out=. \
+       --go-grpc_out=. \
+       --go_opt=module=github.com/MicahSee/go-raft \
+       --go-grpc_opt=module=github.com/MicahSee/go-raft \
+       proto/greeter.proto

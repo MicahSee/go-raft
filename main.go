@@ -1,7 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	pb "github.com/MicahSee/go-raft/proto"
+)
 
 func main() {
-    fmt.Println("Hello, Go!")
+	request := &pb.HelloRequest{Name: "World"}
+	fmt.Println("Request:", request)
 }
