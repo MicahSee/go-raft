@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package raft;
+
+option go_package = "github.com/MicahSee/go-raft/proto/gen";
+
+// Raft service definition
+service Raft {
+    // Request a vote during an election
+    rpc RequestVote(VoteRequest) returns (VoteResponse);
+
+    // Append entries (or send heartbeat) from leader to followers
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+}
+
+// RequestVote RPC
+message VoteRequest {
+    int32 term = 1;         // Candidate's term
+    string candidateId = 2; // Candidate requesting the vote
+}
+
+message VoteResponse {
+    int32 term = 1;         // Responding node's current term
+    bool voteGranted = 2;   // True if the vote is granted
+}
+
+// AppendEntries (heartbeat or log replication) RPC
+message AppendEntriesRequest {
+    int32 term = 1;         // Leader's term
+    string leaderId = 2;    // Leader's ID to identify the sender
+    int32 prevLogIndex = 3; // Index of the log entry immediately preceding new ones
+    int32 prevLogTerm = 4;  // Term of prevLogIndex entry
+    repeated LogEntry entries = 5; // Log entries to store (empty for heartbeat)
+    int32 leaderCommit = 6; // Leader’s commit index
+}
+
+message AppendEntriesResponse {
+    int32 term = 1;         // Responding node's current term
+    bool success = 2;       // True if follower contained matching prevLogIndex and prevLogTerm
+}
+
+// Log entry structure (used in AppendEntries)
+message LogEntry {
+    int32 term = 1;         // Term when entry was received by leader
+    string command = 2;     // Command for the state machine
+}
