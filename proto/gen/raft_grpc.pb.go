@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -21,6 +22,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Raft_RequestVote_FullMethodName   = "/raft.Raft/RequestVote"
 	Raft_AppendEntries_FullMethodName = "/raft.Raft/AppendEntries"
+	Raft_ClientGateway_FullMethodName = "/raft.Raft/ClientGateway"
 )
 
 // RaftClient is the client API for Raft service.
@@ -33,6 +35,8 @@ type RaftClient interface {
 	RequestVote(ctx context.Context, in *VoteRequest, opts ...grpc.CallOption) (*VoteResponse, error)
 	// Append entries (or send heartbeat) from leader to followers
 	AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error)
+	// Client initiates new request to leader
+	ClientGateway(ctx context.Context, in *ClientRequest, opts ...grpc.CallOption) (*ClientRequestAck, error)
 }
 
 type raftClient struct {
@@ -63,6 +67,16 @@ func (c *raftClient) AppendEntries(ctx context.Context, in *AppendEntriesRequest
 	return out, nil
 }
 
+func (c *raftClient) ClientGateway(ctx context.Context, in *ClientRequest, opts ...grpc.CallOption) (*ClientRequestAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClientRequestAck)
+	err := c.cc.Invoke(ctx, Raft_ClientGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RaftServer is the server API for Raft service.
 // All implementations must embed UnimplementedRaftServer
 // for forward compatibility.
@@ -73,6 +87,8 @@ type RaftServer interface {
 	RequestVote(context.Context, *VoteRequest) (*VoteResponse, error)
 	// Append entries (or send heartbeat) from leader to followers
 	AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error)
+	// Client initiates new request to leader
+	ClientGateway(context.Context, *ClientRequest) (*ClientRequestAck, error)
 	mustEmbedUnimplementedRaftServer()
 }
 
@@ -88,6 +104,9 @@ func (UnimplementedRaftServer) RequestVote(context.Context, *VoteRequest) (*Vote
 }
 func (UnimplementedRaftServer) AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AppendEntries not implemented")
+}
+func (UnimplementedRaftServer) ClientGateway(context.Context, *ClientRequest) (*ClientRequestAck, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClientGateway not implemented")
 }
 func (UnimplementedRaftServer) mustEmbedUnimplementedRaftServer() {}
 func (UnimplementedRaftServer) testEmbeddedByValue()              {}
@@ -146,6 +165,24 @@ func _Raft_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Raft_ClientGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClientRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).ClientGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Raft_ClientGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).ClientGateway(ctx, req.(*ClientRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -160,6 +197,114 @@ var Raft_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AppendEntries",
 			Handler:    _Raft_AppendEntries_Handler,
+		},
+		{
+			MethodName: "ClientGateway",
+			Handler:    _Raft_ClientGateway_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/raft.proto",
+}
+
+const (
+	Client_ClientNotification_FullMethodName = "/raft.Client/ClientNotification"
+)
+
+// ClientClient is the client API for Client service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ClientClient interface {
+	// Leader returns message to client notifying of successful completion of request (with a unique uuid for client's own records)
+	ClientNotification(ctx context.Context, in *ClientRequestCompletion, opts ...grpc.CallOption) (*emptypb.Empty, error)
+}
+
+type clientClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewClientClient(cc grpc.ClientConnInterface) ClientClient {
+	return &clientClient{cc}
+}
+
+func (c *clientClient) ClientNotification(ctx context.Context, in *ClientRequestCompletion, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Client_ClientNotification_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ClientServer is the server API for Client service.
+// All implementations must embed UnimplementedClientServer
+// for forward compatibility.
+type ClientServer interface {
+	// Leader returns message to client notifying of successful completion of request (with a unique uuid for client's own records)
+	ClientNotification(context.Context, *ClientRequestCompletion) (*emptypb.Empty, error)
+	mustEmbedUnimplementedClientServer()
+}
+
+// UnimplementedClientServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedClientServer struct{}
+
+func (UnimplementedClientServer) ClientNotification(context.Context, *ClientRequestCompletion) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClientNotification not implemented")
+}
+func (UnimplementedClientServer) mustEmbedUnimplementedClientServer() {}
+func (UnimplementedClientServer) testEmbeddedByValue()                {}
+
+// UnsafeClientServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ClientServer will
+// result in compilation errors.
+type UnsafeClientServer interface {
+	mustEmbedUnimplementedClientServer()
+}
+
+func RegisterClientServer(s grpc.ServiceRegistrar, srv ClientServer) {
+	// If the following call pancis, it indicates UnimplementedClientServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&Client_ServiceDesc, srv)
+}
+
+func _Client_ClientNotification_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClientRequestCompletion)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClientServer).ClientNotification(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Client_ClientNotification_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClientServer).ClientNotification(ctx, req.(*ClientRequestCompletion))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Client_ServiceDesc is the grpc.ServiceDesc for Client service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Client_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "raft.Client",
+	HandlerType: (*ClientServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ClientNotification",
+			Handler:    _Client_ClientNotification_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

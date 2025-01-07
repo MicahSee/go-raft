@@ -4,6 +4,8 @@ package raft;
 
 option go_package = "github.com/MicahSee/go-raft/proto/gen";
 
+import public "google/protobuf/empty.proto";
+
 // Raft service definition
 service Raft {
     // Request a vote during an election
@@ -11,6 +13,14 @@ service Raft {
 
     // Append entries (or send heartbeat) from leader to followers
     rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+
+    // Client initiates new request to leader
+    rpc ClientGateway(ClientRequest) returns (ClientRequestAck);
+}
+
+service Client {
+    // Leader returns message to client notifying of successful completion of request (with a unique uuid for client's own records)
+    rpc ClientNotification (ClientRequestCompletion) returns (google.protobuf.Empty);
 }
 
 // RequestVote RPC
@@ -42,5 +52,18 @@ message AppendEntriesResponse {
 // Log entry structure (used in AppendEntries)
 message LogEntry {
     int32 term = 1;         // Term when entry was received by leader
-    string command = 2;     // Command for the state machine
+    int32 index = 2;        // Index of new entry (should be prevLogIndex + 1)
+    string command = 3;     // Command for the state machine
+}
+
+message ClientRequest {
+    string command = 1;
+}
+
+message ClientRequestAck {
+    bool inProgress = 1;
+}
+
+message ClientRequestCompletion {
+    string requestId = 1;
 }

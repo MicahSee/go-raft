@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	// Import the generated Protobuf package
-
 	"github.com/MicahSee/go-raft/raft"
 )
 
@@ -33,9 +31,10 @@ func main() {
 	// Start the election
 	node.StartElection()
 
-	go node.MonitorHeartbeats()
-
 	fmt.Println("Leader elected. Raft node is running. Press Ctrl+C to stop.")
+
+	// Monitor heartbeats
+	go node.MonitorHeartbeats()
 
 	// infinite loop to keep the program running
 	var wg sync.WaitGroup

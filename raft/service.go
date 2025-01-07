@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -35,9 +34,14 @@ func (node *RaftNode) Serve(port string) {
 func (node *RaftNode) StartElection() {
 	for {
 		node.mu.Lock()
-		node.state = "candidate"
+		if node.state != StateCandidate {
+			node.mu.Unlock()
+			return
+		}
+
 		node.votedFor = node.id
 		node.votes = 1 // Vote for itself
+		node.currentTerm++
 		currentTerm := node.currentTerm
 		node.mu.Unlock()
 
@@ -85,8 +89,9 @@ func (node *RaftNode) StartElection() {
 				if resp.Term > currentTerm {
 					node.mu.Lock()
 					node.currentTerm = resp.Term
-					node.state = "follower"
 					node.mu.Unlock()
+
+					node.transitionState(StateFollower)
 
 					cancel()
 
@@ -109,20 +114,17 @@ func (node *RaftNode) StartElection() {
 
 		majority := len(node.peers)/2 + 1
 		votes := 1
+		// timeout for contacting all peers
 		timeout := time.After(300 * time.Millisecond)
 
 		for {
 			select {
 			case <-node.heartbeatCh:
-				log.Printf("Node %s: Received heartbeat, stopping election.", node.id)
-				node.mu.Lock()
-				node.state = "follower"
-				node.mu.Unlock()
+				node.transitionState(StateFollower)
 				cancel()
 				return
 
 			case <-node.electionCh:
-				log.Printf("Node %s: Received election signal with higher term, stopping election.", node.id)
 				cancel()
 				return
 
@@ -138,82 +140,54 @@ func (node *RaftNode) StartElection() {
 				}
 
 			case <-timeout:
-				log.Printf("Node %s: Election timeout, retrying.", node.id)
 				cancel()
 				goto RetryElection
 			}
 		}
 
 	ElectionResult:
-		node.mu.Lock()
 		if votes >= majority {
-			node.state = "leader"
+			node.transitionState(StateLeader)
+
+			node.mu.Lock()
 			node.leaderID = node.id
 			node.mu.Unlock()
 			log.Printf("Node %s: Won election for term %d with %d votes", node.id, currentTerm, votes)
-			go node.sendHeartbeats()
+			go node.heartbeatBroadcast()
 			return
 		} else {
 			log.Printf("Node %s: Lost election for term %d.", node.id, currentTerm)
-			node.state = "follower"
+
+			node.mu.Lock()
 			node.votedFor = ""
+			node.mu.Unlock()
 		}
-		node.mu.Unlock()
 
 	RetryElection:
-		time.Sleep(time.Duration(150+rand.Intn(150)) * time.Millisecond) // Random backoff
-	}
-}
-
-func (node *RaftNode) sendHeartbeats() {
-	for {
-		node.mu.Lock()
-		if node.state != "leader" {
-			node.mu.Unlock()
-			return
-		}
-		node.mu.Unlock()
-
-		for _, peer := range node.peers {
-			go func(peer string) {
-				conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
-				if err != nil {
-					return
-				}
-				defer conn.Close()
-
-				client := pb.NewRaftClient(conn)
-				req := &pb.AppendEntriesRequest{
-					Term:     node.currentTerm,
-					LeaderId: node.id,
-				}
-
-				_, err = client.AppendEntries(context.Background(), req)
-				if err != nil {
-					log.Printf("Node %s: Failed to send heartbeat to %s: %v", node.id, peer, err)
-				} else {
-					log.Printf("Node %s: Sent heartbeat to %s", node.id, peer)
-				}
-			}(peer)
-		}
-		time.Sleep(100 * time.Millisecond) // Heartbeat interval
+		// random backoff before retrying election
+		time.Sleep(time.Duration(MIN_ELECTION_TIMEOUT+rand.Intn(MAX_ELECTION_TIMEOUT-MIN_ELECTION_TIMEOUT)) * time.Millisecond) // Random backoff
 	}
 }
 
 func (node *RaftNode) MonitorHeartbeats() {
-	timer := time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond) // Timeout duration
-	defer timer.Stop()
+	// start with empty timer
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 
 	for {
-
 		// only check for timeout if the node is a follower
 		node.mu.Lock()
 
-		if node.state != "follower" {
-			fmt.Println("Node is not a follower")
+		if node.state != StateFollower || node.leaderID == "" {
 			node.mu.Unlock()
 			time.Sleep(100 * time.Millisecond) // should we sleep here?
 			continue
+		} else if timer == nil {
+			timer = time.NewTimer(HEARTBEAT_TIMEOUT * time.Millisecond) // Timeout duration
 		}
 		node.mu.Unlock()
 
@@ -231,13 +205,26 @@ func (node *RaftNode) MonitorHeartbeats() {
 			log.Printf("Node %s: Heartbeat timeout, starting new election.", node.id)
 
 			// increment term
-			node.mu.Lock()
-			node.currentTerm++
-			node.mu.Unlock()
+			node.transitionState(StateCandidate)
 
+			// start election
 			node.StartElection()
 
 			timer.Reset(HEARTBEAT_TIMEOUT * time.Millisecond)
 		}
 	}
+}
+
+// function to handle role transitions
+func (node *RaftNode) transitionState(newState string) {
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	// check if the newState is valid
+	if newState != StateFollower && newState != StateCandidate && newState != StateLeader {
+		log.Printf("Node %s: Invalid state transition to %s", node.id, newState)
+		return
+	}
+
+	node.state = newState
 }
